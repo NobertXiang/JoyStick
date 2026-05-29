@@ -45,8 +45,11 @@ void MX_ADC1_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 extern uint16_t joystick_adc_raw[JOYSTICK_ADC_CHANNEL_COUNT];
+extern uint8_t joystick_hid_report[JOYSTICK_HID_REPORT_SIZE];
 HAL_StatusTypeDef Joystick_ADC_Start(void);
-void Joystick_SendHidReport(void);
+void Joystick_PackHidReport(void);
+uint8_t Joystick_TransmitHidReport(void);
+uint8_t Joystick_SendHidReport(void);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

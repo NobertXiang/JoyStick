@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 #include "adc.h"
 #include "dma.h"
 #include "spi.h"
@@ -54,6 +55,7 @@ extern volatile uint8_t joystick_adc_ready;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -101,27 +103,41 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_USART2_UART_Init();
-  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
+  /* Start ADC conversion with DMA */
   if (Joystick_ADC_Start() != HAL_OK)
   {
     Error_Handler();
   }
+  
+  /* Start all encoder timers */
+  HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
+  HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
+  HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+  HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+
+  /* USB 须在 FreeRTOS 启动前初始化，确保主机可立即枚举设备 */
+  MX_USB_DEVICE_Init();
+
   /* USER CODE END 2 */
 
-  /* Infinite loop */
+  /* Init scheduler */
+  osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
+  
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (joystick_adc_ready != 0U)
-    {
-      joystick_adc_ready = 0U;
-      Joystick_SendHidReport();
-    }
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
+    /* This code will never execute after osKernelStart() */
   }
+  /* USER CODE END WHILE */
+
+  /* USER CODE BEGIN 3 */
   /* USER CODE END 3 */
 }
 

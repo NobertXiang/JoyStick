@@ -22,9 +22,12 @@
 
 /* USER CODE BEGIN 0 */
 #include "usbd_custom_hid_if.h"
+#include "usb_device.h"
+#include <string.h>
 
 uint16_t joystick_adc_raw[JOYSTICK_ADC_CHANNEL_COUNT];
-static uint8_t joystick_hid_report[JOYSTICK_HID_REPORT_SIZE];
+uint8_t joystick_hid_report[JOYSTICK_HID_REPORT_SIZE];
+static uint8_t joystick_hid_tx[JOYSTICK_HID_REPORT_SIZE];
 volatile uint8_t joystick_adc_ready = 0U;
 /* USER CODE END 0 */
 
@@ -167,7 +170,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     __HAL_LINKDMA(adcHandle,DMA_Handle,hdma_adc1);
 
     /* ADC1 interrupt Init */
-    HAL_NVIC_SetPriority(ADC1_2_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(ADC1_2_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(ADC1_2_IRQn);
   /* USER CODE BEGIN ADC1_MspInit 1 */
 
@@ -233,27 +236,50 @@ HAL_StatusTypeDef Joystick_ADC_Start(void)
   return HAL_ADC_Start_DMA(&hadc1, (uint32_t *)joystick_adc_raw, JOYSTICK_ADC_CHANNEL_COUNT);
 }
 
-void Joystick_SendHidReport(void)
+void Joystick_PackHidReport(void)
 {
   for (uint32_t i = 0U; i < JOYSTICK_ADC_CHANNEL_COUNT; i++)
   {
-    uint16_t value;
-
-    /* 缓冲区顺序: CH0, CH1, CH4, CH6, CH8, CH9；前 4 路映射为 0-360 */
-    if (i < 4U)
-    {
-      value = Joystick_MapToAngle(joystick_adc_raw[i]);
-    }
-    else
-    {
-      value = joystick_adc_raw[i];
-    }
+    uint16_t value = Joystick_MapToAngle(joystick_adc_raw[i]);
 
     joystick_hid_report[i * 2U]      = (uint8_t)(value & 0xFFU);
     joystick_hid_report[i * 2U + 1U] = (uint8_t)(value >> 8);
   }
+}
 
-  (void)USBD_CUSTOM_HID_SendReport_FS(joystick_hid_report, JOYSTICK_HID_REPORT_SIZE);
+static uint8_t Joystick_TryTransmit(const uint8_t *report)
+{
+  USBD_CUSTOM_HID_HandleTypeDef *hhid;
+
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED)
+  {
+    return USBD_OK;
+  }
+
+  hhid = (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassData;
+  if (hhid == NULL)
+  {
+    return USBD_FAIL;
+  }
+
+  if (hhid->state != CUSTOM_HID_IDLE)
+  {
+    return USBD_BUSY;
+  }
+
+  memcpy(joystick_hid_tx, report, JOYSTICK_HID_REPORT_SIZE);
+  return USBD_CUSTOM_HID_SendReport_FS(joystick_hid_tx, JOYSTICK_HID_REPORT_SIZE);
+}
+
+uint8_t Joystick_TransmitHidReport(void)
+{
+  return Joystick_TryTransmit(joystick_hid_report);
+}
+
+uint8_t Joystick_SendHidReport(void)
+{
+  Joystick_PackHidReport();
+  return Joystick_TransmitHidReport();
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
